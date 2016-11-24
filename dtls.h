@@ -388,7 +388,7 @@ int dtls_record_read(dtls_state_t *state, uint8 *msg, int msglen);
  * @return A value less than zero on error, zero on success.
  */
 int dtls_handle_message(dtls_context_t *ctx, session_t *session,
-			uint8 *msg, int msglen);
+			uint8 *msg, int msglen, uint8 is_multicast);
 
 /**
  * Check if @p session is associated with a peer object in @p context.

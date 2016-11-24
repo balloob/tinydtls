@@ -49,6 +49,8 @@
 #  include "sha2/sha2.h"
 #endif
 
+#include "uthash.h"
+
 #define dtls_set_version(H,V) dtls_int_to_uint16((H)->version, (V))
 #define dtls_set_content_type(H,V) ((H)->content_type = (V) & 0xff)
 #define dtls_set_length(H,V)  ((H)->length = (V))
@@ -413,6 +415,9 @@ dtls_set_record_header(uint8 type, dtls_security_parameters_t *security,
     buf += sizeof(uint16);
 
     dtls_int_to_uint48(buf, security->rseq);
+    if(security->rseqgroup) {
+      buf[0] = security->rseqgroup;
+    }
     buf += sizeof(uint48);
 
     /* increment record sequence counter by 1 */
@@ -3639,7 +3644,8 @@ static int dtls_alert_send_from_err(dtls_context_t *ctx, dtls_peer_t *peer,
 int
 dtls_handle_message(dtls_context_t *ctx, 
 		    session_t *session,
-		    uint8 *msg, int msglen) {
+		    uint8 *msg, int msglen,
+        uint8 is_multicast) {
   dtls_peer_t *peer = NULL;
   unsigned int rlen;		/* record length */
   uint8 *data; 			/* (decrypted) payload */
@@ -3670,19 +3676,44 @@ dtls_handle_message(dtls_context_t *ctx,
         dtls_alert("No security context for epoch: %i\n", dtls_get_epoch(header));
         data_length = -1;
       } else {
+        uint8_t gid = 0;
+        if(is_multicast){
+          gid = header->sequence_number[0];
+          header->sequence_number[0] = 0;
+        }
         uint64_t pkt_seq_nr = dtls_uint48_to_int(header->sequence_number);
-        if(pkt_seq_nr == 0 && security->cseq.cseq == 0) {
+        seqnum_t *cseq;
+        HASH_FIND(hh, (security->cseq), &gid, sizeof(uint8_t), cseq);
+        
+        if(is_multicast && (cseq == 0)) {
           data_length = decrypt_verify(peer, msg, rlen, &data);
-          if (data_length) {
-            security->cseq.cseq = 0;
-            security->cseq.bitfield = -1;
+          if (data_length > 0) { /*new peer*/
+            cseq = malloc(sizeof(seqnum_t));
+            if(cseq) {
+              cseq->gid      = gid;
+              cseq->cseq     = pkt_seq_nr;
+              cseq->bitfield = -1;
+              HASH_ADD(hh, security->cseq, gid, sizeof(uint8_t), cseq);
+            } else {
+              dtls_alert("can't allocate gid");
+              return 0; //TODO?
+            }
+          } else {
+            dtls_info("unknown group id");
+            return 0;
           }
-        } else if (pkt_seq_nr == security->cseq.cseq) {
-          dtls_info("Duplicate packet arrived (cseq=%llu)\n", security->cseq.cseq);
+        } else if(pkt_seq_nr == 0 &&  cseq->cseq == 0) {
+          data_length = decrypt_verify(peer, msg, rlen, &data);
+          if (data_length > 0) {
+            cseq->cseq = 0;
+            cseq->bitfield = -1;
+          }
+        } else if (pkt_seq_nr == cseq->cseq) {
+          dtls_info("Duplicate packet arrived (cseq=%llu)\n", cseq->cseq);
           return 0;
-        } else if ((int64_t)(security->cseq.cseq-pkt_seq_nr) > 0) { //pkt_seq_nr < security->cseq.cseq)
-          if (((security->cseq.cseq-1)-pkt_seq_nr) < 64) {
-              if(security->cseq.bitfield & (1<<((security->cseq.cseq-1)-pkt_seq_nr))) {
+        } else if ((int64_t)(cseq->cseq-pkt_seq_nr) > 0) { /* pkt_seq_nr < cseq->cseq */
+          if (((cseq->cseq-1)-pkt_seq_nr) < 64) {
+              if(cseq->bitfield & (1<<((cseq->cseq-1)-pkt_seq_nr))) {
                 dtls_info("Duplicate packet arrived (bitfield)\n");
                 //seen it
                   return 0;
@@ -3690,21 +3721,21 @@ dtls_handle_message(dtls_context_t *ctx,
                 dtls_info("Packet arrived out of order\n");
                 data_length = decrypt_verify(peer, msg, rlen, &data);
                 if(data_length > 0) {
-                  security->cseq.bitfield |= (1<<((security->cseq.cseq-1)-pkt_seq_nr));
+                  cseq->bitfield |= (1<<((cseq->cseq-1)-pkt_seq_nr));
                 }
               }
           } else {
             dtls_info("Packet from before the bitfield arrived\n");
               return 0;
           }
-        } else { //pkt_seq_nr > security->cseq.cseq
+        } else { //pkt_seq_nr > cseq->cseq
           data_length = decrypt_verify(peer, msg, rlen, &data);
           if(data_length > 0) {
-            security->cseq.bitfield <<= (pkt_seq_nr-security->cseq.cseq);
-            security->cseq.bitfield |= 1<<((pkt_seq_nr-security->cseq.cseq)-1);
-            security->cseq.cseq = pkt_seq_nr;
+            cseq->bitfield <<= (pkt_seq_nr-cseq->cseq);
+            cseq->bitfield |= 1<<((pkt_seq_nr-cseq->cseq)-1);
+            cseq->cseq = pkt_seq_nr;
             dtls_debug("new packet arrived with seqNr: %llu\n", pkt_seq_nr);
-            dtls_debug("new bitfield is              : %llx\n", security->cseq.bitfield);
+            dtls_debug("new bitfield is              : %llx\n", cseq->bitfield);
           }
         }
       }
@@ -3782,29 +3813,29 @@ dtls_handle_message(dtls_context_t *ctx,
        * epoch, Finish has epoch + 1. */
 
       if (peer) {
-	uint16_t expected_epoch = dtls_security_params(peer)->epoch;
-	uint16_t msg_epoch = 
-	  dtls_uint16_to_int(DTLS_RECORD_HEADER(msg)->epoch);
+        uint16_t expected_epoch = dtls_security_params(peer)->epoch;
+        uint16_t msg_epoch = 
+          dtls_uint16_to_int(DTLS_RECORD_HEADER(msg)->epoch);
 
-	/* The new security parameters must be used for all messages
-	 * that are sent after the ChangeCipherSpec message. This
-	 * means that the client's Finished message uses epoch + 1
-	 * while the server is still in the old epoch.
-	 */
-	if (role == DTLS_SERVER && state == DTLS_STATE_WAIT_FINISHED) {
-	  expected_epoch++;
-	}
+        /* The new security parameters must be used for all messages
+        * that are sent after the ChangeCipherSpec message. This
+        * means that the client's Finished message uses epoch + 1
+        * while the server is still in the old epoch.
+        */
+        if (role == DTLS_SERVER && state == DTLS_STATE_WAIT_FINISHED) {
+          expected_epoch++;
+        }
 
-	if (expected_epoch != msg_epoch) {
-          if (hs_attempt_with_existing_peer(msg, rlen, peer)) {
-            state = DTLS_STATE_WAIT_CLIENTHELLO;
-            role = DTLS_SERVER;
-          } else {
-	    dtls_warn("Wrong epoch, expected %i, got: %i\n",
-		    expected_epoch, msg_epoch);
-	    break;
-	  }
-	}
+        if (expected_epoch != msg_epoch) {
+                if (hs_attempt_with_existing_peer(msg, rlen, peer)) {
+                  state = DTLS_STATE_WAIT_CLIENTHELLO;
+                  role = DTLS_SERVER;
+                } else {
+            dtls_warn("Wrong epoch, expected %i, got: %i\n",
+              expected_epoch, msg_epoch);
+            break;
+          }
+        }
       }
 
       err = handle_handshake(ctx, peer, session, role, state, data, data_length);

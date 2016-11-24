@@ -17,6 +17,7 @@
 #include "tinydtls.h" 
 #include "dtls.h" 
 #include "dtls_debug.h"
+#include <getopt.h>
 
 #define DEFAULT_PORT 20220
 
@@ -157,8 +158,22 @@ static int
 dtls_handle_read(struct dtls_context_t *ctx) {
   int *fd;
   session_t session;
+  uint8 ctl[0x100];
   static uint8 buf[DTLS_MAX_BUF];
   int len;
+  struct msghdr msg;
+  struct sockaddr_in6 peeraddr;
+  uint8 is_multicast = 0;
+  struct iovec iov;
+  iov.iov_base = buf;
+  iov.iov_len  = sizeof(buf);
+  
+  msg.msg_name        = &peeraddr;
+  msg.msg_namelen     = sizeof(peeraddr);
+  msg.msg_control     = ctl;
+  msg.msg_controllen  = sizeof(ctl);
+  msg.msg_iov         = &iov;
+  msg.msg_iovlen      = 1;
 
   fd = dtls_get_app_data(ctx);
 
@@ -166,9 +181,31 @@ dtls_handle_read(struct dtls_context_t *ctx) {
 
   memset(&session, 0, sizeof(session_t));
   session.size = sizeof(session.addr);
-  len = recvfrom(*fd, buf, sizeof(buf), MSG_TRUNC,
-		 &session.addr.sa, &session.size);
+  //len = recvfrom(*fd, buf, sizeof(buf), MSG_TRUNC, &session.addr.sa, &session.size);
+  len = recvmsg(*fd, &msg, MSG_TRUNC);
+  session.size = msg.msg_namelen;
+  memcpy(&session.addr.sa, msg.msg_name, msg.msg_namelen);
 
+#ifdef __USE_GNU
+  for(struct cmsghdr *cmsg = CMSG_FIRSTHDR(&msg); cmsg != NULL; cmsg = CMSG_NXTHDR(&msg, cmsg)){
+    if (cmsg->cmsg_level == IPPROTO_IPV6 && cmsg->cmsg_type == IPV6_PKTINFO)
+    {
+    struct in6_pktinfo *pi = (struct in6_pktinfo*)CMSG_DATA(cmsg);
+    
+    /*printf("\npkg to: ");
+    for(int i=0; i<sizeof(pi->ipi6_addr.s6_addr); i++){
+      printf("%02x ", pi->ipi6_addr.s6_addr[i]);
+    }
+    printf("\n\n");*/
+    
+    is_multicast = (pi->ipi6_addr.s6_addr[0] == 0xFF);
+    
+    }
+  }
+#else
+  printf("no GNU?");
+#endif
+  
   if (len < 0) {
     perror("recvfrom");
     return -1;
@@ -180,7 +217,7 @@ dtls_handle_read(struct dtls_context_t *ctx) {
     }
   }
 
-  return dtls_handle_message(ctx, &session, buf, len);
+  return dtls_handle_message(ctx, &session, buf, len, is_multicast);
 }    
 
 static int
@@ -257,12 +294,13 @@ static dtls_handler_t cb = {
 int 
 main(int argc, char **argv) {
   dtls_context_t *the_context = NULL;
-  log_t log_level = DTLS_LOG_WARN;
+  log_t log_level = DTLS_LOG_INFO; //DTLS_LOG_WARN;
   fd_set rfds, wfds;
   struct timeval timeout;
   int fd, opt, result;
   int on = 1;
   struct sockaddr_in6 listen_addr;
+  char *join_mc = NULL;
 
   memset(&listen_addr, 0, sizeof(struct sockaddr_in6));
 
@@ -275,7 +313,7 @@ main(int argc, char **argv) {
   listen_addr.sin6_port = htons(DEFAULT_PORT);
   listen_addr.sin6_addr = in6addr_any;
 
-  while ((opt = getopt(argc, argv, "A:p:v:")) != -1) {
+  while ((opt = getopt(argc, argv, "A:p:v:m:")) != -1) {
     switch (opt) {
     case 'A' :
       if (resolve_address(optarg, (struct sockaddr *)&listen_addr) < 0) {
@@ -288,6 +326,9 @@ main(int argc, char **argv) {
       break;
     case 'v' :
       log_level = strtol(optarg, NULL, 10);
+      break;
+    case 'm':
+      join_mc = strdup(optarg);
       break;
     default:
       usage(argv[0], dtls_package_version());
@@ -304,10 +345,11 @@ main(int argc, char **argv) {
     dtls_alert("socket: %s\n", strerror(errno));
     return 0;
   }
-
+  
   if (setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &on, sizeof(on) ) < 0) {
     dtls_alert("setsockopt SO_REUSEADDR: %s\n", strerror(errno));
   }
+
 #if 0
   flags = fcntl(fd, F_GETFL, 0);
   if (flags < 0 || fcntl(fd, F_SETFL, flags | O_NONBLOCK) < 0) {
@@ -329,6 +371,25 @@ main(int argc, char **argv) {
     goto error;
   }
 
+  if(join_mc){
+    struct sockaddr_in6 dst;
+    resolve_address(join_mc, &dst);
+
+    struct ipv6_mreq mreq;
+    
+/*    for(int i = 0; i < sizeof(dst.sin6_addr.s6_addr); i++){
+      printf("%02X ", dst.sin6_addr.s6_addr[i]);
+    }
+    printf("\n");*/
+    
+    memcpy(&mreq.ipv6mr_multiaddr, &dst.sin6_addr, sizeof(dst.sin6_addr));
+    mreq.ipv6mr_interface = 0;
+    
+    if(setsockopt(fd, IPPROTO_IPV6, IPV6_ADD_MEMBERSHIP, &mreq, sizeof(mreq))){
+      dtls_alert("setsockopt IPV6_ADD_MEMBERSHIP: %s\n", strerror(errno));
+    }
+  }
+  
   dtls_init();
 
   the_context = dtls_new_context(&fd);
@@ -349,13 +410,13 @@ main(int argc, char **argv) {
     
     if (result < 0) {		/* error */
       if (errno != EINTR)
-	perror("select");
+        perror("select");
     } else if (result == 0) {	/* timeout */
     } else {			/* ok */
       if (FD_ISSET(fd, &wfds))
-	;
+        ;
       else if (FD_ISSET(fd, &rfds)) {
-	dtls_handle_read(the_context);
+        dtls_handle_read(the_context);
       }
     }
   }

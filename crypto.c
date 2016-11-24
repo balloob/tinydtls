@@ -83,6 +83,18 @@ static dtls_security_parameters_t *dtls_security_malloc() {
 static void dtls_security_dealloc(dtls_security_parameters_t *security) {
   free(security);
 }
+
+static seqnum_t *dtls_cseq_malloc() {
+  return malloc(sizeof(seqnum_t));
+}
+
+static void dtls_cseq_dealloc(seqnum_t *cseq){
+  seqnum_t *current, *tmp;
+  HASH_ITER(hh, cseq,current, tmp) {
+    HASH_DEL(cseq, current);
+    free(current);
+  }
+}
 #else /* WITH_CONTIKI */
 
 #include "memb.h"
@@ -158,6 +170,22 @@ dtls_security_parameters_t *dtls_security_new()
   if (security) {
     security->cipher = TLS_NULL_WITH_NULL_NULL;
     security->compression = TLS_COMPRESSION_NULL;
+    security->cseq = NULL;
+    security->rseqgroup = 0;
+  }
+  
+  //init first cseq
+  seqnum_t *cseq = dtls_cseq_malloc();
+
+  if(cseq) {
+    cseq->gid      = 0;
+    cseq->cseq     = 0;
+    cseq->bitfield = -1;
+    HASH_ADD(hh, (security->cseq), gid, sizeof(uint8_t), cseq);
+  } else {
+    dtls_security_dealloc(security);
+    dtls_crit("can not allocate a cseq in security struct\n");
+    return NULL;
   }
   return security;
 }
@@ -166,6 +194,10 @@ void dtls_security_free(dtls_security_parameters_t *security)
 {
   if (!security)
     return;
+  
+  if(security->cseq){
+    dtls_cseq_dealloc(security->cseq);
+  }
 
   dtls_security_dealloc(security);
 }

@@ -227,7 +227,7 @@ dtls_handle_read(struct dtls_context_t *ctx) {
     dtls_debug_dump("bytes from peer", buf, len);
   }
 
-  return dtls_handle_message(ctx, &session, buf, len);
+  return dtls_handle_message(ctx, &session, buf, len, 0);
 }    
 
 static void dtls_handle_signal(int sig)
@@ -336,7 +336,7 @@ main(int argc, char **argv) {
   struct timeval timeout;
   unsigned short port = DEFAULT_PORT;
   char port_str[NI_MAXSERV] = "0";
-  log_t log_level = DTLS_LOG_WARN;
+  log_t log_level = DTLS_LOG_INFO; //DTLS_LOG_WARN;
   int fd, result;
   int on = 1;
   int opt, res;
@@ -352,7 +352,7 @@ main(int argc, char **argv) {
   memcpy(psk_key, PSK_DEFAULT_KEY, psk_key_length);
 #endif /* DTLS_PSK */
 
-  while ((opt = getopt(argc, argv, "p:o:v:" PSK_OPTIONS)) != -1) {
+  while ((opt = getopt(argc, argv, "p:o:v:m" PSK_OPTIONS)) != -1) {
     switch (opt) {
 #ifdef DTLS_PSK
     case 'i' : {
@@ -392,6 +392,8 @@ main(int argc, char **argv) {
       break;
     case 'v' :
       log_level = strtol(optarg, NULL, 10);
+      break;
+    case 'm':
       break;
     default:
       usage(argv[0], dtls_package_version());

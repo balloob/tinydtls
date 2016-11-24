@@ -28,6 +28,7 @@
 #include "numeric.h"
 #include "hmac.h"
 #include "ccm.h"
+#include "uthash.h"
 
 /* TLS_PSK_WITH_AES_128_CCM_8 */
 #define DTLS_MAC_KEY_LENGTH    0
@@ -86,6 +87,8 @@ typedef struct {
 } dtls_handshake_parameters_psk_t;
 
 typedef struct {
+    UT_hash_handle hh;
+    uint8_t  gid;
     uint64_t cseq;
     uint64_t bitfield;
 } seqnum_t;
@@ -105,7 +108,8 @@ typedef struct {
    */
   uint8 key_block[MAX_KEYBLOCK_LENGTH];
   
-  seqnum_t cseq;        /**<sequence number of last record received*/
+  uint8_t rseqgroup;    /**<our groupid for multicast*/
+  seqnum_t *cseq;        /**<sequence number of last record received*/
 } dtls_security_parameters_t;
 
 struct netq_t;
