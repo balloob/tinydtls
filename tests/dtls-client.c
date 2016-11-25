@@ -20,6 +20,9 @@
 #include "dtls_debug.h"
 #include "dtls.h" 
 
+#include "mc-helper.h"
+#include "crypto.h"
+
 #define DEFAULT_PORT 20220
 
 #define PSK_DEFAULT_IDENTITY "Client_identity"
@@ -341,6 +344,7 @@ main(int argc, char **argv) {
   int on = 1;
   int opt, res;
   session_t dst;
+  int join_mc = 0;
 
   dtls_init();
   snprintf(port_str, sizeof(port_str), "%d", port);
@@ -383,17 +387,18 @@ main(int argc, char **argv) {
       output_file.s = (unsigned char *)malloc(output_file.length + 1);
       
       if (!output_file.s) {
-	dtls_crit("cannot set output file: insufficient memory\n");
-	exit(-1);
-      } else {
-	/* copy filename including trailing zero */
-	memcpy(output_file.s, optarg, output_file.length + 1);
+        dtls_crit("cannot set output file: insufficient memory\n");
+        exit(-1);
+            } else {
+        /* copy filename including trailing zero */
+        memcpy(output_file.s, optarg, output_file.length + 1);
       }
       break;
     case 'v' :
       log_level = strtol(optarg, NULL, 10);
       break;
-    case 'm':
+    case 'm': /* multicast target */
+      join_mc = 1;
       break;
     default:
       usage(argv[0], dtls_package_version());
@@ -416,7 +421,7 @@ main(int argc, char **argv) {
     exit(-1);
   }
   dst.size = res;
-
+  
   /* use port number from command line when specified or the listen
      port, otherwise */
   dst.addr.sin.sin_port = htons(atoi(optind < argc ? argv[optind++] : port_str));
@@ -462,7 +467,17 @@ main(int argc, char **argv) {
 
   dtls_set_handler(dtls_context, &cb);
 
-  dtls_connect(dtls_context, &dst);
+  if(join_mc) {
+    dtls_handshake_parameters_t hs = make_handshake(0,0,0,0);
+    dtls_peer_t *peer = make_peer(&dst, DTLS_CLIENT, dtls_context);
+    fake_key_block(&hs, peer, DTLS_CLIENT);
+    
+    //rseqgroup...
+    dtls_security_params(peer)->rseqgroup = 42;
+
+  } else {
+    dtls_connect(dtls_context, &dst);
+  }
 
   while (1) {
     FD_ZERO(&rfds);

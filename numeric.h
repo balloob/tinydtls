@@ -109,6 +109,15 @@ static inline uint32_t dtls_uint32_to_int(const unsigned char *field)
 	 | (uint32_t)field[3];
 }
 
+static inline uint64_t dtls_uint40_to_int(const unsigned char *field)
+{
+  return ((uint64_t)field[1] << 32)
+	 | ((uint64_t)field[2] << 24)
+	 | ((uint64_t)field[3] << 16)
+	 | ((uint64_t)field[4] << 8)
+	 | (uint64_t)field[5];
+}
+
 static inline uint64_t dtls_uint48_to_int(const unsigned char *field)
 {
   return ((uint64_t)field[0] << 40)

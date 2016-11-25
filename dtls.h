@@ -402,6 +402,8 @@ int dtls_handle_message(dtls_context_t *ctx, session_t *session,
 dtls_peer_t *dtls_get_peer(const dtls_context_t *context,
 			   const session_t *session);
 
+int dtls_add_peer(dtls_context_t *ctx, dtls_peer_t *peer);
+
 /**
  * Resets all connections with @p peer.
  *

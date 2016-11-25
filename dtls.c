@@ -240,7 +240,7 @@ dtls_get_peer(const dtls_context_t *ctx, const session_t *session) {
  * on success, or a negative value on error (e.g. due to insufficient
  * storage).
  */
-static int
+int
 dtls_add_peer(dtls_context_t *ctx, dtls_peer_t *peer) {
   ADD_PEER(ctx->peers, session, peer);
   return 0;
@@ -713,6 +713,7 @@ calculate_key_block(dtls_context_t *ctx,
   dtls_debug_dump("server_random", handshake->tmp.random.server, DTLS_RANDOM_LENGTH);
   dtls_debug_dump("pre_master_secret", pre_master_secret, pre_master_len);
 
+  /* Hash Magic */
   dtls_prf(pre_master_secret, pre_master_len,
 	   PRF_LABEL(master), PRF_LABEL_SIZE(master),
 	   handshake->tmp.random.client, DTLS_RANDOM_LENGTH,
@@ -726,6 +727,7 @@ calculate_key_block(dtls_context_t *ctx,
    * key_block = PRF(master_secret,
                     "key expansion" + tmp.random.server + tmp.random.client) */
 
+  /* more Hash Magic */
   dtls_prf(master_secret,
 	   DTLS_MASTER_SECRET_LENGTH,
 	   PRF_LABEL(key), PRF_LABEL_SIZE(key),
@@ -3677,29 +3679,37 @@ dtls_handle_message(dtls_context_t *ctx,
         data_length = -1;
       } else {
         uint8_t gid = 0;
+        uint64_t pkt_seq_nr;
         if(is_multicast){
           gid = header->sequence_number[0];
-          header->sequence_number[0] = 0;
+          pkt_seq_nr = dtls_uint40_to_int(header->sequence_number);
+        } else {
+          pkt_seq_nr = dtls_uint48_to_int(header->sequence_number);
         }
-        uint64_t pkt_seq_nr = dtls_uint48_to_int(header->sequence_number);
-        seqnum_t *cseq;
+        seqnum_t *cseq = NULL;
         HASH_FIND(hh, (security->cseq), &gid, sizeof(uint8_t), cseq);
         
-        if(is_multicast && (cseq == 0)) {
+        if(is_multicast && (cseq == 0)) { //we don't know this peer yet...
           data_length = decrypt_verify(peer, msg, rlen, &data);
           if (data_length > 0) { /*new peer*/
-            cseq = malloc(sizeof(seqnum_t));
+            
+            //cseq = malloc(sizeof(seqnum_t));
+            cseq = dtls_cseq_malloc();
             if(cseq) {
               cseq->gid      = gid;
               cseq->cseq     = pkt_seq_nr;
               cseq->bitfield = -1;
-              HASH_ADD(hh, security->cseq, gid, sizeof(uint8_t), cseq);
+              //HASH_ADD(hh, (security->cseq), gid, sizeof(uint8_t), cseq);
+              if(add_cseq(&(security->cseq), cseq) != 0) {
+                dtls_alert("can't add gid");
+                free(cseq);
+              }
             } else {
               dtls_alert("can't allocate gid");
               return 0; //TODO?
             }
           } else {
-            dtls_info("unknown group id");
+            dtls_info("not adding peer, mac failed");
             return 0;
           }
         } else if(pkt_seq_nr == 0 &&  cseq->cseq == 0) {

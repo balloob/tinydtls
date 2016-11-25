@@ -84,11 +84,11 @@ static void dtls_security_dealloc(dtls_security_parameters_t *security) {
   free(security);
 }
 
-static seqnum_t *dtls_cseq_malloc() {
+seqnum_t *dtls_cseq_malloc() {
   return malloc(sizeof(seqnum_t));
 }
 
-static void dtls_cseq_dealloc(seqnum_t *cseq){
+void dtls_cseq_dealloc(seqnum_t *cseq){
   seqnum_t *current, *tmp;
   HASH_ITER(hh, cseq,current, tmp) {
     HASH_DEL(cseq, current);
@@ -155,6 +155,11 @@ void dtls_handshake_free(dtls_handshake_parameters_t *handshake)
   dtls_handshake_dealloc(handshake);
 }
 
+int add_cseq(seqnum_t **head, seqnum_t *cseq) {
+  HASH_ADD(hh, *head, gid, sizeof(uint8_t), cseq);
+  return 0;
+}
+
 dtls_security_parameters_t *dtls_security_new()
 {
   dtls_security_parameters_t *security;
@@ -181,7 +186,12 @@ dtls_security_parameters_t *dtls_security_new()
     cseq->gid      = 0;
     cseq->cseq     = 0;
     cseq->bitfield = -1;
-    HASH_ADD(hh, (security->cseq), gid, sizeof(uint8_t), cseq);
+    //HASH_ADD(hh, (security->cseq), gid, sizeof(uint8_t), cseq);
+    if(add_cseq(&(security->cseq), cseq) != 0) {
+      dtls_cseq_dealloc(cseq);
+      dtls_security_dealloc(security);
+      dtls_crit("can not add a cseq in security struct\n");
+    }
   } else {
     dtls_security_dealloc(security);
     dtls_crit("can not allocate a cseq in security struct\n");

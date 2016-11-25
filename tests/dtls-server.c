@@ -18,6 +18,7 @@
 #include "dtls.h" 
 #include "dtls_debug.h"
 #include <getopt.h>
+#include "mc-helper.h"
 
 #define DEFAULT_PORT 20220
 
@@ -180,31 +181,35 @@ dtls_handle_read(struct dtls_context_t *ctx) {
   assert(fd);
 
   memset(&session, 0, sizeof(session_t));
-  session.size = sizeof(session.addr);
+  session.size = msg.msg_namelen;
   //len = recvfrom(*fd, buf, sizeof(buf), MSG_TRUNC, &session.addr.sa, &session.size);
   len = recvmsg(*fd, &msg, MSG_TRUNC);
-  session.size = msg.msg_namelen;
-  memcpy(&session.addr.sa, msg.msg_name, msg.msg_namelen);
 
-#ifdef __USE_GNU
-  for(struct cmsghdr *cmsg = CMSG_FIRSTHDR(&msg); cmsg != NULL; cmsg = CMSG_NXTHDR(&msg, cmsg)){
-    if (cmsg->cmsg_level == IPPROTO_IPV6 && cmsg->cmsg_type == IPV6_PKTINFO)
-    {
-    struct in6_pktinfo *pi = (struct in6_pktinfo*)CMSG_DATA(cmsg);
-    
-    /*printf("\npkg to: ");
-    for(int i=0; i<sizeof(pi->ipi6_addr.s6_addr); i++){
-      printf("%02x ", pi->ipi6_addr.s6_addr[i]);
-    }
-    printf("\n\n");*/
-    
-    is_multicast = (pi->ipi6_addr.s6_addr[0] == 0xFF);
-    
+/* #ifdef __USE_GNU */
+  for(struct cmsghdr *cmsg = CMSG_FIRSTHDR(&msg); cmsg != NULL; cmsg = CMSG_NXTHDR(&msg, cmsg)) {
+    if (cmsg->cmsg_level == IPPROTO_IPV6 && cmsg->cmsg_type == IPV6_PKTINFO) {
+      struct in6_pktinfo *pi = (struct in6_pktinfo*)CMSG_DATA(cmsg);
+      
+      /*printf("\npkg to: ");
+      for(int i=0; i<sizeof(pi->ipi6_addr.s6_addr); i++){
+        printf("%02x ", pi->ipi6_addr.s6_addr[i]);
+      }
+      printf("\n\n");*/
+      
+      is_multicast = (pi->ipi6_addr.s6_addr[0] == 0xFF);
+      
+      if(is_multicast) {
+        memcpy(&session.addr.sin6.sin6_addr, &(pi->ipi6_addr), sizeof(struct in6_addr));
+        session.addr.sin6.sin6_family = AF_INET6;
+      } else {
+        memcpy(&session.addr.sin6, msg.msg_name, msg.msg_namelen);
+      }
     }
   }
+/*
 #else
   printf("no GNU?");
-#endif
+#endif */
   
   if (len < 0) {
     perror("recvfrom");
@@ -371,9 +376,16 @@ main(int argc, char **argv) {
     goto error;
   }
 
+  dtls_init();
+
+  the_context = dtls_new_context(&fd);
+  
+  dtls_set_handler(the_context, &cb);
+
   if(join_mc){
+    /* Join MC */
     struct sockaddr_in6 dst;
-    resolve_address(join_mc, &dst);
+    resolve_address(join_mc, (struct sockaddr*)&dst);
 
     struct ipv6_mreq mreq;
     
@@ -388,14 +400,16 @@ main(int argc, char **argv) {
     if(setsockopt(fd, IPPROTO_IPV6, IPV6_ADD_MEMBERSHIP, &mreq, sizeof(mreq))){
       dtls_alert("setsockopt IPV6_ADD_MEMBERSHIP: %s\n", strerror(errno));
     }
+    
+    //prepare crypto...
+    dtls_handshake_parameters_t hs = make_handshake(0,0,0,0);
+    session_t dsts  = {.addr.sin6 = dst, .size=sizeof(dst)};
+    
+    dtls_peer_t *peer = make_peer(&dsts, DTLS_SERVER, the_context);
+    
+    fake_key_block(&hs, peer, DTLS_SERVER);
   }
   
-  dtls_init();
-
-  the_context = dtls_new_context(&fd);
-
-  dtls_set_handler(the_context, &cb);
-
   while (1) {
     FD_ZERO(&rfds);
     FD_ZERO(&wfds);
