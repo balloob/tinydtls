@@ -13,11 +13,11 @@
 #include <sys/time.h>
 #include <netdb.h>
 #include <signal.h>
+#include <getopt.h>
 
 #include "tinydtls.h" 
 #include "dtls.h" 
 #include "dtls_debug.h"
-#include <getopt.h>
 #include "mc-helper.h"
 
 #define DEFAULT_PORT 20220
@@ -385,29 +385,12 @@ main(int argc, char **argv) {
   if(join_mc){
     /* Join MC */
     struct sockaddr_in6 dst;
-    resolve_address(join_mc, (struct sockaddr*)&dst);
-
-    struct ipv6_mreq mreq;
-    
-/*    for(int i = 0; i < sizeof(dst.sin6_addr.s6_addr); i++){
-      printf("%02X ", dst.sin6_addr.s6_addr[i]);
-    }
-    printf("\n");*/
-    
-    memcpy(&mreq.ipv6mr_multiaddr, &dst.sin6_addr, sizeof(dst.sin6_addr));
-    mreq.ipv6mr_interface = 0;
-    
-    if(setsockopt(fd, IPPROTO_IPV6, IPV6_ADD_MEMBERSHIP, &mreq, sizeof(mreq))){
-      dtls_alert("setsockopt IPV6_ADD_MEMBERSHIP: %s\n", strerror(errno));
-    }
+    joinmc(join_mc, &dst, fd);
     
     //prepare crypto...
-    dtls_handshake_parameters_t hs = make_handshake(0,0,0,0);
     session_t dsts  = {.addr.sin6 = dst, .size=sizeof(dst)};
     
-    dtls_peer_t *peer = make_peer(&dsts, DTLS_SERVER, the_context);
-    
-    fake_key_block(&hs, peer, DTLS_SERVER);
+    fake_key_block(&dsts, the_context, DTLS_SERVER, 0);
   }
   
   while (1) {

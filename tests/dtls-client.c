@@ -468,13 +468,7 @@ main(int argc, char **argv) {
   dtls_set_handler(dtls_context, &cb);
 
   if(join_mc) {
-    dtls_handshake_parameters_t hs = make_handshake(0,0,0,0);
-    dtls_peer_t *peer = make_peer(&dst, DTLS_CLIENT, dtls_context);
-    fake_key_block(&hs, peer, DTLS_CLIENT);
-    
-    //rseqgroup...
-    dtls_security_params(peer)->rseqgroup = 42;
-
+    fake_key_block(&dst, dtls_context, DTLS_CLIENT, 42);
   } else {
     dtls_connect(dtls_context, &dst);
   }
