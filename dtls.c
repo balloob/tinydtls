@@ -169,7 +169,7 @@ free_context(dtls_context_t *context) {
 #else /* WITH_CONTIKI */
 
 static inline dtls_context_t *
-malloc_context() {
+malloc_context(void) {
   return (dtls_context_t *)malloc(sizeof(dtls_context_t));
 }
 
@@ -302,7 +302,8 @@ dtls_create_cookie(dtls_context_t *ctx,
 		   uint8 *msg, size_t msglen,
 		   uint8 *cookie, int *clen) {
   unsigned char buf[DTLS_HMAC_MAX];
-  size_t len, e;
+  int len;
+  size_t e;
 
   /* create cookie with HMAC-SHA256 over:
    * - SECRET
@@ -2590,7 +2591,7 @@ check_server_hello_verify_request(dtls_context_t *ctx,
   res = dtls_send_client_hello(ctx, peer, hv->cookie, hv->cookie_length);
 
   if (res < 0)
-    dtls_warn("cannot send ClientHello\n");
+    dtls_warn("check_server_hello_verify_request: cannot send ClientHello\n");
 
   return res;
 }
@@ -3020,7 +3021,7 @@ dtls_renegotiate(dtls_context_t *ctx, const session_t *dst)
     /* send ClientHello with empty Cookie */
     err = dtls_send_client_hello(ctx, peer, NULL, 0);
     if (err < 0)
-      dtls_warn("cannot send ClientHello\n");
+      dtls_warn("dtls_renegotiate: cannot send ClientHello\n");
     else
       peer->state = DTLS_STATE_CLIENTHELLO;
     return err;
@@ -3383,7 +3384,7 @@ handle_handshake_msg(dtls_context_t *ctx, dtls_peer_t *peer, session_t *session,
     /* send ClientHello with empty Cookie */
     err = dtls_send_client_hello(ctx, peer, NULL, 0);
     if (err < 0) {
-      dtls_warn("cannot send ClientHello\n");
+      dtls_warn("handle_handshake_msg: cannot send ClientHello\n");
       return err;
     }
     peer->state = DTLS_STATE_CLIENTHELLO;
@@ -3998,7 +3999,7 @@ dtls_connect_peer(dtls_context_t *ctx, dtls_peer_t *peer) {
   peer->handshake_params->hs_state.mseq_s = 0;
   res = dtls_send_client_hello(ctx, peer, NULL, 0);
   if (res < 0)
-    dtls_warn("cannot send ClientHello\n");
+    dtls_warn("dtls_connect_peer: cannot send ClientHello\n");
   else 
     peer->state = DTLS_STATE_CLIENTHELLO;
 

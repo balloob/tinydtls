@@ -468,7 +468,9 @@ main(int argc, char **argv) {
   dtls_set_handler(dtls_context, &cb);
 
   if(join_mc) {
-    fake_key_block(&dst, dtls_context, DTLS_CLIENT, 42);
+    char psk[] =  "SharedSecret";
+    
+    fake_key_block(&dst, dtls_context, DTLS_CLIENT, &psk, 42);
   } else {
     dtls_connect(dtls_context, &dst);
   }

@@ -3,7 +3,7 @@
 
 int joinmc(char* group, struct sockaddr_in6 *dst, int fd);
 
-int fake_key_block(session_t *dst, dtls_context_t *ctx, dtls_peer_type role, uint8_t groupid);
+int fake_key_block(session_t *dst, dtls_context_t *ctx, dtls_peer_type role, unsigned char *psk, uint8_t groupid);
 
 /* some constants for the PRF */
 #define PRF_LABEL(Label) prf_label_##Label

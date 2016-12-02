@@ -25,7 +25,7 @@ void peer_init()
 }
 
 static inline dtls_peer_t *
-dtls_malloc_peer() {
+dtls_malloc_peer(void) {
   return (dtls_peer_t *)malloc(sizeof(dtls_peer_t));
 }
 

@@ -306,6 +306,7 @@ main(int argc, char **argv) {
   int on = 1;
   struct sockaddr_in6 listen_addr;
   char *join_mc = NULL;
+  char *psk = NULL;
 
   memset(&listen_addr, 0, sizeof(struct sockaddr_in6));
 
@@ -334,6 +335,9 @@ main(int argc, char **argv) {
       break;
     case 'm':
       join_mc = strdup(optarg);
+      break;
+    case 's':
+      psk = strdup(optarg);
       break;
     default:
       usage(argv[0], dtls_package_version());
@@ -389,8 +393,11 @@ main(int argc, char **argv) {
     
     //prepare crypto...
     session_t dsts  = {.addr.sin6 = dst, .size=sizeof(dst)};
+    printf("sizeof(dst), %d\n", sizeof(dst));
     
-    fake_key_block(&dsts, the_context, DTLS_SERVER, 0);
+    char psk[] =  "SharedSecret";
+    
+    fake_key_block(&dsts, the_context, DTLS_SERVER, &psk, 0);
   }
   
   while (1) {

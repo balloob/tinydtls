@@ -353,7 +353,7 @@ dtls_handshake_parameters_t *dtls_handshake_new(void);
 void dtls_handshake_free(dtls_handshake_parameters_t *handshake);
 
 int add_cseq(seqnum_t **head, seqnum_t *cseq);
-seqnum_t *dtls_cseq_malloc();
+seqnum_t *dtls_cseq_malloc(void);
 void dtls_cseq_dealloc(seqnum_t *cseq);
 
 dtls_security_parameters_t *dtls_security_new(void);

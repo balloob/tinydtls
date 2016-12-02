@@ -40,7 +40,7 @@
 #define min(a,b) ((a) < (b) ? (a) : (b))
 #endif
 
-static int maxlog = DTLS_LOG_WARN;	/* default maximum log level */
+static log_t maxlog = DTLS_LOG_WARN;	/* default maximum log level */
 
 const char *dtls_package_name() {
   return PACKAGE_NAME;

@@ -117,7 +117,8 @@ dtls_debug_keyblock(dtls_security_parameters_t *config)
 		  dtls_kb_iv_size(config, peer->role));
 }
 
-dtls_handshake_parameters_t make_handshake(char* client_random, int client_random_length, char* server_random, int server_random_length)
+dtls_handshake_parameters_t 
+make_handshake(char* client_random, int client_random_length, char* server_random, int server_random_length)
 {
   dtls_handshake_parameters_t handshake;
   handshake.cipher = TLS_PSK_WITH_AES_128_CCM_8;
@@ -133,7 +134,7 @@ dtls_handshake_parameters_t make_handshake(char* client_random, int client_rando
 }
 
 static dtls_peer_t *
-make_peer(session_t *dst, dtls_peer_type role, dtls_context_t *ctx){ //TODO: make peer in block?
+make_peer(session_t *dst, dtls_peer_type role, dtls_context_t *ctx){ //TODO: make peer inline?
   dtls_peer_t *peer = dtls_new_peer(dst);
   peer->role = role;
   peer->state = DTLS_STATE_CONNECTED;
@@ -146,18 +147,12 @@ make_peer(session_t *dst, dtls_peer_type role, dtls_context_t *ctx){ //TODO: mak
   return peer;
 }
 
-int 
-fillpks(unsigned char* psk, int len)
-{
-  strncpy((char*)psk, "SharedSecret", len); //TODO
-  return len;
-}
-
 int
 fake_key_block(
   session_t *dst,
   dtls_context_t *ctx,
   dtls_peer_type role,
+  unsigned char *psk,
   uint8_t groupid)
 {
   unsigned char *pre_master_secret;
@@ -177,14 +172,12 @@ fake_key_block(
   switch (handshake.cipher) {
 #ifdef DTLS_PSK
   case TLS_PSK_WITH_AES_128_CCM_8: {
-    unsigned char psk[DTLS_PSK_MAX_KEY_LEN];
     int len;
-
-    len = fillpks(psk, DTLS_PSK_MAX_KEY_LEN);
-    
-    if (len < 0) {
-      dtls_crit("no psk key for session available\n");
-      return len;
+    if(psk)
+    {
+      len = strlen((char *)psk);
+    } else {
+      return -1;
     }
     
     /* Temporarily use the key_block storage space for the pre master secret. */
