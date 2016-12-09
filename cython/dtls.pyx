@@ -16,13 +16,14 @@ DTLS_LOG_NOTICE = tdtls.DTLS_LOG_NOTICE
 DTLS_LOG_INFO   = tdtls.DTLS_LOG_INFO
 DTLS_LOG_DEBUG  = tdtls.DTLS_LOG_DEBUG
 
+
 cdef int _write(dtls_context_t *ctx, session_t *session, uint8 *buf, size_t len):
   """Send data to socket"""
   self = <object>(ctx.app)
   data = buf[:len]
   assert session.addr.sin6.sin6_family == socket.AF_INET6
   ip   = socket.inet_ntop(socket.AF_INET6, session.addr.sin6.sin6_addr.s6_addr[:16])
-  port = session.addr.sin6.sin6_port
+  port = socket.ntohs(session.addr.sin6.sin6_port)
   cdef int ret = self.pycb['write']((ip, port), data)
   return ret
   
@@ -32,7 +33,7 @@ cdef int _read(dtls_context_t *ctx, session_t *session, uint8 *buf, size_t len):
   data = buf[:len]
   assert session.addr.sin6.sin6_family == socket.AF_INET6
   ip   = socket.inet_ntop(socket.AF_INET6, session.addr.sin6.sin6_addr.s6_addr[:16])
-  port = session.addr.sin6.sin6_port
+  port = socket.ntohs(session.addr.sin6.sin6_port)
   cdef int ret = self.pycb['read']((ip, port), data)
   return ret
   
@@ -73,15 +74,27 @@ cdef int _get_psk_info(dtls_context_t *ctx,
   self = <object>(ctx.app)
   
   assert session.addr.sin6.sin6_family == socket.AF_INET6
-  ip   = socket.inet_ntop(session.addr.sin6.sin6_addr.s6_addr[:16])#':'.join(hex(session.addr.sin6.sin6_addr.__u6_addr.__u6_addr8))
-  port = session.addr.sin6.sin6_port
+  ip   = socket.inet_ntop(socket.AF_INET6, session.addr.sin6.sin6_addr.s6_addr[:16])
+  port = socket.ntohs(session.addr.sin6.sin6_port)
   
   #req_type
+  if   req_type == tdtls.DTLS_PSK_HINT:
+    # ??? TODO
+    pass
+  elif req_type == tdtls.DTLS_PSK_IDENTITY:
+    # Client: self.myID?
+    pass
+  elif req_type == tdtls.DTLS_PSK_KEY:
+    #desc == psk_identity
+    #Client: if decs == self.myID: self.myPSK
+    pass
+  else:
+    return -1
   
   desc = desc_data[:desc_len]
   result  = result_data[:result_length]
   
-  print "psk: TODO..."
+  print "psk: TODO...", ip, port, req_type, desc, result
   
   return 0
 
@@ -92,28 +105,28 @@ cdef class Session:
       self.session.size = sizeof(self.session.addr.sin6)
       self.session.addr.sin6.sin6_family   = socket.AF_INET6
       self.session.addr.sin6.sin6_addr.s6_addr = socket.inet_pton(socket.AF_INET6, addr)
-      self.session.addr.sin6.sin6_port     = port
+      self.session.addr.sin6.sin6_port     = socket.htons(port)
       self.session.addr.sin6.sin6_flowinfo = flowinfo
       self.session.addr.sin6.sin6_scope_id = scope_id
       self.session.ifindex = 0
-    property family:
-      def __get__(self):
-        return self.session.addr.sin6.sin6_family
-    property addr:
-      def __get__(self):
-        return self.session.addr.sin6.sin6_addr.s6_addr[:16]
-    property port:
-      def __get__(self):
-        return self.session.addr.sin6.sin6_port
-    property flowinfo:
-      def __get__(self):
-        return self.session.addr.sin6.sin6_flowinfo
-    property scope_id:
-      def __get__(self):
-        return self.session.addr.sin6.sin6_scope_id
-    property ifindex:
-      def __get__(self):
-        return self.session.ifindex
+    @property
+    def family(self):
+      return self.session.addr.sin6.sin6_family
+    @property
+    def addr(self):
+      return self.session.addr.sin6.sin6_addr.s6_addr[:16]
+    @property
+    def port(self):
+      return socket.ntohs(self.session.addr.sin6.sin6_port)
+    @property
+    def flowinfo(self):
+      return self.session.addr.sin6.sin6_flowinfo
+    @property
+    def scope_id(self):
+      return self.session.addr.sin6.sin6_scope_id
+    @property
+    def ifindex(self):
+      return self.session.ifindex
     cdef session_t* getSession(self):
         return &self.session
     cdef p(self):
@@ -122,7 +135,11 @@ cdef class Session:
 cdef class DTLS:
   cdef dtls_context_t *ctx
   cdef dtls_handler_t cb
-  pycb = dict()
+  cdef object pycb
+  
+  @property
+  def pycb(self):
+    return self.pycb
   
   def __cinit__(self):
     tdtls.dtls_init()
@@ -137,6 +154,7 @@ cdef class DTLS:
     tdtls.dtls_free_context(self.ctx)
     
   def __init__(self, read=None, write=None):
+    self.pycb = dict()
     if read == None:
       read = self.p
     self.pycb['read']  = read
