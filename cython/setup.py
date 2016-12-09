@@ -11,6 +11,7 @@ setup(
                 define_macros=[('DTLSv12', '1'),
                                ('WITH_SHA256', '1'),
                                ('DTLS_CHECK_CONTENTTYPE', '1'),
-                               ('_GNU_SOURCE', '1')]
-                )])
+                               ('_GNU_SOURCE', '1')],
+                undef_macros = [ "NDEBUG" ],
+                )], gdb_debug=True)
 )

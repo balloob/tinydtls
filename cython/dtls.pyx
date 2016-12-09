@@ -8,6 +8,13 @@ import socket
 DTLS_CLIENT = tdtls.DTLS_CLIENT
 DTLS_SERVER = tdtls.DTLS_SERVER
 
+DTLS_LOG_EMERG  = tdtls.DTLS_LOG_EMERG
+DTLS_LOG_ALERT  = tdtls.DTLS_LOG_ALERT
+DTLS_LOG_CRIT   = tdtls.DTLS_LOG_CRIT
+DTLS_LOG_WARN   = tdtls.DTLS_LOG_WARN
+DTLS_LOG_NOTICE = tdtls.DTLS_LOG_NOTICE
+DTLS_LOG_INFO   = tdtls.DTLS_LOG_INFO
+DTLS_LOG_DEBUG  = tdtls.DTLS_LOG_DEBUG
 
 cdef int _write(dtls_context_t *ctx, session_t *session, uint8 *buf, size_t len):
   """Send data to socket"""
@@ -16,7 +23,8 @@ cdef int _write(dtls_context_t *ctx, session_t *session, uint8 *buf, size_t len)
   assert session.addr.sin6.sin6_family == socket.AF_INET6
   ip   = socket.inet_ntop(socket.AF_INET6, session.addr.sin6.sin6_addr.s6_addr[:16])
   port = session.addr.sin6.sin6_port
-  return self.pycb['write']((ip, port), data)
+  cdef int ret = self.pycb['write']((ip, port), data)
+  return ret
   
 cdef int _read(dtls_context_t *ctx, session_t *session, uint8 *buf, size_t len):
   """Send data to application"""
@@ -25,11 +33,12 @@ cdef int _read(dtls_context_t *ctx, session_t *session, uint8 *buf, size_t len):
   assert session.addr.sin6.sin6_family == socket.AF_INET6
   ip   = socket.inet_ntop(socket.AF_INET6, session.addr.sin6.sin6_addr.s6_addr[:16])
   port = session.addr.sin6.sin6_port
-  return self.pycb['read']((ip, port), data)
+  cdef int ret = self.pycb['read']((ip, port), data)
+  return ret
   
 cdef int _event(dtls_context_t *ctx, session_t *session, dtls_alert_level_t level, unsigned short code):
   """The event handler is called when a message from the alert protocol is received or the state of the DTLS session changes."""
-  print("event:", level, code)
+  print "event:", level, code
   return 0;
 
 cdef int _get_psk_info(dtls_context_t *ctx,
@@ -64,13 +73,15 @@ cdef int _get_psk_info(dtls_context_t *ctx,
   self = <object>(ctx.app)
   
   assert session.addr.sin6.sin6_family == socket.AF_INET6
-  ip   = ':'.join(hex(session.addr.sin6.sin6_addr.__u6_addr.__u6_addr8))
+  ip   = socket.inet_ntop(session.addr.sin6.sin6_addr.s6_addr[:16])#':'.join(hex(session.addr.sin6.sin6_addr.__u6_addr.__u6_addr8))
   port = session.addr.sin6.sin6_port
+  
+  #req_type
   
   desc = desc_data[:desc_len]
   result  = result_data[:result_length]
   
-  print("psk: TODO...")
+  print "psk: TODO..."
   
   return 0
 
@@ -90,7 +101,7 @@ cdef class Session:
         return self.session.addr.sin6.sin6_family
     property addr:
       def __get__(self):
-        return self.session.addr.sin6.sin6_addr.s6_addr
+        return self.session.addr.sin6.sin6_addr.s6_addr[:16]
     property port:
       def __get__(self):
         return self.session.addr.sin6.sin6_port
@@ -106,32 +117,26 @@ cdef class Session:
     cdef session_t* getSession(self):
         return &self.session
     cdef p(self):
-      #print(self.session)
-      pass
+      print "Sesion dump:", self.session.size, self.family, self.addr, self.port, self.flowinfo, self.scope_id, self.ifindex
 
 cdef class DTLS:
   cdef dtls_context_t *ctx
   cdef dtls_handler_t cb
-  cdef object _sock
   pycb = dict()
-  sessions = []
   
   def __cinit__(self):
     tdtls.dtls_init()
     self.ctx = tdtls.dtls_new_context(<void*>self)
-    
-  def __dealloc__(self):
-    tdtls.dtls_free_context(self.ctx)
     self.cb.write = _write
     self.cb.read  = _read
     self.cb.event = _event
     self.cb.get_psk_info = _get_psk_info
     tdtls.dtls_set_handler(self.ctx, &self.cb)
     
-  def __init__(self, sock=None, read=None, write=None):
-    if sock == None:
-      sock = socket.socket(socket.AF_INET6, socket.SOCK_DGRAM)
-    self._sock  = sock
+  def __dealloc__(self):
+    tdtls.dtls_free_context(self.ctx)
+    
+  def __init__(self, read=None, write=None):
     if read == None:
       read = self.p
     self.pycb['read']  = read
@@ -139,26 +144,58 @@ cdef class DTLS:
       write = self.p
     self.pycb['write'] = write
   
-  def p(x, y):
-    print("default cb, addr:", x,"data:", y)
+  def p(self, x, y):
+    print "default cb, addr:", x,"data:", y
+    return len(y)
   
   #int dtls_connect(dtls_context_t *ctx, const session_t *dst)
   def connect(self, addr, port=0, flowinfo=0, scope_id=0):
-    session = Session(addr, port=0, flowinfo=0, scope_id=0)
-    session.p()
-    if tdtls.dtls_connect(self.ctx, session.getSession()):
-      self.sessions.append(session)
-  
+    session = Session(addr=addr, port=port, flowinfo=flowinfo, scope_id=scope_id)
+    #session.p()
+    ret = tdtls.dtls_connect(self.ctx, session.getSession());
+    if(ret == 0):
+      print "already connected to", addr
+    elif ret > 0:
+      return session
+    else:
+      print "error", ret
+      return None
+
+
   #int dtls_close(dtls_context_t *ctx, const session_t *remote)
-  
+  def close(self, Session session: Session):
+    ret = tdtls.dtls_close(self.ctx, session.getSession())
+    if ret != 0:
+      print "Error in close:", ret
+      raise Exception()
+
+  #dtls_peer_t *dtls_get_peer(const dtls_context_t *context, const session_t *session);
+  #void dtls_reset_peer(dtls_context_t *ctx, dtls_peer_t *peer)
+  def resetPeer(self, Session session: Session):
+    tdtls.dtls_reset_peer(self.ctx, tdtls.dtls_get_peer(self.ctx, session.getSession()))
+
   #int dtls_write(dtls_context_t *ctx, session_t *session, uint8 *buf, size_t len)
+  def write(self, Session remote: Session, data: bytes):
+    """send data to remote"""
+    return tdtls.dtls_write(self.ctx, remote.getSession(), data, len(data))
   
   #void dtls_check_retransmit(dtls_context_t *context, clock_time_t *next)
+  def checkRetransmit(self):
+    cdef tdtls.clock_time_t t = 0;
+    tdtls.dtls_check_retransmit(self.ctx, &t)
+    return t
   
   #int dtls_handle_message(dtls_context_t *ctx, session_t *session, uint8 *msg, int msglen, uint8 is_multicast)
+  def handleMessage(self, session, msg, mc):
+    return tdtls.dtls_handle_message(self.ctx, (<Session?>session).getSession(), msg, len(msg), mc)
+  
+  def handleMessageAddr(self, addr, port, msg, mc):
+    session = Session(addr, port)
+    return tdtls.dtls_handle_message(self.ctx, (<Session?>session).getSession(), msg, len(msg), mc)
+  
   
   #int joinmc(char *group, sockaddr_in6 *dst, int fd)
-  def joinLeaveGroupe(self, group, join=True):
+  def joinLeaveGroupe(self, group, sock, join=True):
     """join/leave multicast group"""
     import struct
     
@@ -169,23 +206,24 @@ cdef class DTLS:
       assert addrinfo[0] == socket.AF_INET6
       mreq = ga + struct.pack('@I', 0)
       if join:
-        self._sock.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_JOIN_GROUP, mreq)
+        sock.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_JOIN_GROUP, mreq)
       else:
-        self._sock.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_LEAVE_GROUP, mreq)
+        sock.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_LEAVE_GROUP, mreq)
     except OSError as e:
-      print(e)
+      print e
       return False
     return True
   
   #int fake_key_block(session_t *dst, dtls_context_t *ctx, dtls_peer_type role, unsigned char *psk, uint8_t groupid)
-  def fake_key_block(self, group, tdtls.dtls_peer_type role, unsigned char* psk, uint8_t gid):
-    cdef session_t session
-    session.addr.sin6.sin6_family   = socket.AF_INET6
-    session.addr.sin6.sin6_addr.s6_addr = socket.inet_pton(socket.AF_INET6, group)
-    session.addr.sin6.sin6_port     = 0
-    session.addr.sin6.sin6_flowinfo = 0
-    session.addr.sin6.sin6_scope_id = 0
-    #print("session.addr.sin6", session.addr.sin6, type(session.addr.sin6))
-    #print(session.addr.sin6.sin6_addr.s6_addr[:16])
-    if(tdtls.fake_key_block(&session, self.ctx, role, psk, gid) < 0):
-      raise
+  def fakeKeyBlock(self, group, tdtls.dtls_peer_type role, unsigned char* psk, uint8_t gid):
+    session = Session(addr=group, port=0, flowinfo=0, scope_id=0)
+    if(tdtls.fake_key_block(session.getSession(), self.ctx, role, psk[:], gid) < 0):
+      raise Exception()
+    #(<Session?>session).p()
+    return session
+
+def setLogLevel(level):
+  tdtls.dtls_set_log_level(level)
+
+def dtlsGetLogLevel():
+  return tdtls.dtls_get_log_level()

@@ -3706,11 +3706,11 @@ dtls_handle_message(dtls_context_t *ctx,
                 free(cseq);
               }
             } else {
-              dtls_alert("can't allocate gid");
+              dtls_alert("can't allocate gid\n");
               return 0; //TODO?
             }
           } else {
-            dtls_info("not adding peer, mac failed");
+            dtls_info("not adding peer, mac failed\n");
             return 0;
           }
         } else if(pkt_seq_nr == 0 &&  cseq->cseq == 0) {

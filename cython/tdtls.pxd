@@ -100,6 +100,9 @@ cdef extern from "../dtls.h":
   int dtls_connect(dtls_context_t *ctx, const session_t *dst)
   
   int dtls_close(dtls_context_t *ctx, const session_t *remote)
+  
+  dtls_peer_t *dtls_get_peer(const dtls_context_t *context, const session_t *session);
+  void dtls_reset_peer(dtls_context_t *ctx, dtls_peer_t *peer)
 
   
   int dtls_write(dtls_context_t *ctx, session_t *session, uint8 *buf, size_t len)
@@ -107,3 +110,15 @@ cdef extern from "../dtls.h":
   void dtls_check_retransmit(dtls_context_t *context, clock_time_t *next)
   
   int dtls_handle_message(dtls_context_t *ctx, session_t *session, uint8 *msg, int msglen, uint8 is_multicast)
+
+cdef extern from "../dtls_debug.h":
+  ctypedef enum log_t:
+    DTLS_LOG_EMERG=0
+    DTLS_LOG_ALERT
+    DTLS_LOG_CRIT
+    DTLS_LOG_WARN
+    DTLS_LOG_NOTICE
+    DTLS_LOG_INFO
+    DTLS_LOG_DEBUG
+  void  dtls_set_log_level(int level)
+  int dtls_get_log_level()
