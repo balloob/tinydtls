@@ -1,33 +1,28 @@
 import dtls, time, socket
 
-s = socket.socket(family=socket.AF_INET6, type=socket.SOCK_DGRAM)
-s.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_RECVPKTINFO, 1)
+sock = socket.socket(family=socket.AF_INET6, type=socket.SOCK_DGRAM)
+sock.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_RECVPKTINFO, 1)
 
 def read(x, y):
-  print("> read:", x, y.hex())
+  print("> read:", x, y)
   return len(y)
 
 def write(x, y):
-  print("< write:", x, y.hex())
+  #print("< write:", x, y.hex())
   ip, port = x
-  return s.sendto(y, x)
+  return sock.sendto(y, x)
+
+lastEvent = 0
+def event(level, code):
+  global lastEvent
+  lastEvent = code
 
 def pprint(x):
   print("\n---", x, "---")
 
-#dtls.setLogLevel(dtls.DTLS_LOG_DEBUG)
-print("Log Level:", dtls.dtlsGetLogLevel())
-
-print("\nClient connect")
-
-d = dtls.DTLS(read=read, write=write, pskId=b"Client_identity", pskStore={b"Client_identity": b"secretPSK"})
-
-pprint("connect:")
-d.connect("::1", 20220)
-
-#now = time.
-while True:
-  data, ancdata, flags, src = s.recvmsg(1200, 100)
+def querySock(sock, d):
+  data, ancdata, flags, src = sock.recvmsg(1200, 100)
+  #print("Got:", data, ancdata, flags, src)
   dst = 0
   mc = False
   for cmsg_level, cmsg_type, cmsg_data in ancdata:
@@ -36,12 +31,28 @@ while True:
             dst = socket.inet_ntop(socket.AF_INET6, cmsg_data[:16])
             mc = True
   if mc:
-    print(d.handleMessageAddr(dst, 0, data, mc))
+    d.handleMessageAddr(dst, 0, data, mc)
   else:
-    print(d.handleMessageAddr(src[0], src[1], data, mc))
+    d.handleMessageAddr(src[0], src[1], data, mc)
+
+
+#dtls.setLogLevel(dtls.DTLS_LOG_DEBUG)
+print("Log Level:", dtls.dtlsGetLogLevel())
+
+d = dtls.DTLS(read=read, write=write, event=event, pskId=b"Client_identity", pskStore={b"Client_identity": b"secretPSK"})
+
+pprint("connect:")
+s = d.connect("::1", 20220)
+
+#block till connected
+while lastEvent != 0x1de:
+  querySock(sock, d)
 
 pprint("try to send data")
-print("try write:", d.write(s, b"Test!"))
+print("try write:", d.write(s, b"Test!\n"))
+
+pprint("answer:")
+querySock(sock, d)
 
 pprint("close connection")
 d.close(s)
