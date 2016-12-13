@@ -4,6 +4,7 @@ from libc.stdint cimport uint8_t
 from libc.stddef cimport size_t
 ctypedef uint8_t uint8
 import socket
+from libc cimport string
 
 DTLS_CLIENT = tdtls.DTLS_CLIENT
 DTLS_SERVER = tdtls.DTLS_SERVER
@@ -71,31 +72,41 @@ cdef int _get_psk_info(dtls_context_t *ctx,
    @param result_length  Maximum size of @p result.
    @return The number of bytes written to @p result or a value
            less than zero on error. """
-  self = <object>(ctx.app)
+  self = <DTLS>(ctx.app)
   
   assert session.addr.sin6.sin6_family == socket.AF_INET6
   ip   = socket.inet_ntop(socket.AF_INET6, session.addr.sin6.sin6_addr.s6_addr[:16])
   port = socket.ntohs(session.addr.sin6.sin6_port)
+  desc = desc_data[:desc_len]
+  #result = result_data[:result_length]
+  cdef char *tmp
   
-  #req_type
-  if   req_type == tdtls.DTLS_PSK_HINT:
-    # ??? TODO
+  if   req_type == tdtls.DTLS_PSK_HINT: # ??? TODO
+    print "PSK HINT", ip, port, desc
     pass
   elif req_type == tdtls.DTLS_PSK_IDENTITY:
-    # Client: self.myID?
-    pass
+    print "PSK ID", ip, port, desc.hex()
+    l = len(self.pskId)
+    if result_length >= l:
+      #result = self.pskId
+      string.memcpy(result_data, self.pskId, l)
+      print result_data[:l], result_data[:l].hex(), l
+      return l
+    else:
+      return -1
   elif req_type == tdtls.DTLS_PSK_KEY:
-    #desc == psk_identity
-    #Client: if decs == self.myID: self.myPSK
-    pass
+    print "PSK KEY", ip, port, desc, desc.hex()
+    if desc in self.pskStore.keys():
+      l = len(self.pskStore[desc])
+      #result = self.pskStore[desc]
+      tmp = self.pskStore[desc]
+      string.memcpy(result_data, tmp, l)
+      print result_data[:l], result_data[:l].hex(), l
+      return l
+    else:
+      return -1
   else:
     return -1
-  
-  desc = desc_data[:desc_len]
-  result  = result_data[:result_length]
-  
-  print "psk: TODO...", ip, port, req_type, desc, result
-  
   return 0
 
 cdef class Session:
@@ -136,10 +147,20 @@ cdef class DTLS:
   cdef dtls_context_t *ctx
   cdef dtls_handler_t cb
   cdef object pycb
+  cdef char* pskId
+  cdef object pskStore
   
   @property
   def pycb(self):
     return self.pycb
+  
+  @property
+  def pskId(self):
+    return self.pskId
+  
+  @property
+  def pskStore(self):
+    return self.pskStore
   
   def __cinit__(self):
     tdtls.dtls_init()
@@ -153,7 +174,7 @@ cdef class DTLS:
   def __dealloc__(self):
     tdtls.dtls_free_context(self.ctx)
     
-  def __init__(self, read=None, write=None):
+  def __init__(self, read=None, write=None, pskId=b"Id", pskStore={b"Id": b"secret"}):
     self.pycb = dict()
     if read == None:
       read = self.p
@@ -161,6 +182,9 @@ cdef class DTLS:
     if write == None:
       write = self.p
     self.pycb['write'] = write
+    
+    self.pskId = pskId
+    self.pskStore = pskStore
   
   def p(self, x, y):
     print "default cb, addr:", x,"data:", y
