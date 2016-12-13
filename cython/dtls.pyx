@@ -40,7 +40,11 @@ cdef int _read(dtls_context_t *ctx, session_t *session, uint8 *buf, size_t len):
   
 cdef int _event(dtls_context_t *ctx, session_t *session, dtls_alert_level_t level, unsigned short code):
   """The event handler is called when a message from the alert protocol is received or the state of the DTLS session changes."""
-  print "event:", level, code
+  self = <object>(ctx.app)
+  if self.pycb['event'] != None:
+    self.pycb['event'](level, code)
+  else:
+    print "event:", hex(level), hex(code)
   return 0;
 
 cdef int _get_psk_info(dtls_context_t *ctx,
@@ -174,7 +178,7 @@ cdef class DTLS:
   def __dealloc__(self):
     tdtls.dtls_free_context(self.ctx)
     
-  def __init__(self, read=None, write=None, pskId=b"Id", pskStore={b"Id": b"secret"}):
+  def __init__(self, read=None, write=None, event=None, pskId=b"Id", pskStore={b"Id": b"secret"}):
     self.pycb = dict()
     if read == None:
       read = self.p
@@ -182,6 +186,7 @@ cdef class DTLS:
     if write == None:
       write = self.p
     self.pycb['write'] = write
+    self.pycb['event'] = event
     
     self.pskId = pskId
     self.pskStore = pskStore
