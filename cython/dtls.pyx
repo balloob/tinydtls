@@ -86,26 +86,26 @@ cdef int _get_psk_info(dtls_context_t *ctx,
   cdef char *tmp
   
   if   req_type == tdtls.DTLS_PSK_HINT: # ??? TODO
-    print "PSK HINT", ip, port, desc
+    #print "PSK HINT", ip, port, desc
     pass
   elif req_type == tdtls.DTLS_PSK_IDENTITY:
-    print "PSK ID", ip, port, desc.hex()
+    #print "PSK ID", ip, port, desc.hex()
     l = len(self.pskId)
     if result_length >= l:
       #result = self.pskId
       string.memcpy(result_data, self.pskId, l)
-      print result_data[:l], result_data[:l].hex(), l
+      #print result_data[:l], result_data[:l].hex(), l
       return l
     else:
       return -1
   elif req_type == tdtls.DTLS_PSK_KEY:
-    print "PSK KEY", ip, port, desc, desc.hex()
+    #print "PSK KEY", ip, port, desc, desc.hex()
     if desc in self.pskStore.keys():
       l = len(self.pskStore[desc])
       #result = self.pskStore[desc]
       tmp = self.pskStore[desc]
       string.memcpy(result_data, tmp, l)
-      print result_data[:l], result_data[:l].hex(), l
+      #print result_data[:l], result_data[:l].hex(), l
       return l
     else:
       return -1
@@ -115,11 +115,11 @@ cdef int _get_psk_info(dtls_context_t *ctx,
 
 cdef class Session:
     cdef session_t session
-    def __cinit__(self, addr, int port=0, int flowinfo=0, int scope_id=0):
+    def __init__(self, addr, int port=0, int flowinfo=0, int scope_id=0):
       assert sizeof(self.session.addr.sin6) == 28
       self.session.size = sizeof(self.session.addr.sin6)
       self.session.addr.sin6.sin6_family   = socket.AF_INET6
-      self.session.addr.sin6.sin6_addr.s6_addr = socket.inet_pton(socket.AF_INET6, addr)
+      self.session.addr.sin6.sin6_addr.s6_addr = socket.inet_pton(self.session.addr.sin6.sin6_family, addr)
       self.session.addr.sin6.sin6_port     = socket.htons(port)
       self.session.addr.sin6.sin6_flowinfo = flowinfo
       self.session.addr.sin6.sin6_scope_id = scope_id
@@ -129,7 +129,7 @@ cdef class Session:
       return self.session.addr.sin6.sin6_family
     @property
     def addr(self):
-      return self.session.addr.sin6.sin6_addr.s6_addr[:16]
+      return socket.inet_ntop(self.session.addr.sin6.sin6_family, self.session.addr.sin6.sin6_addr.s6_addr[:16])
     @property
     def port(self):
       return socket.ntohs(self.session.addr.sin6.sin6_port)
@@ -147,24 +147,42 @@ cdef class Session:
     cdef p(self):
       print "Sesion dump:", self.session.size, self.family, self.addr, self.port, self.flowinfo, self.scope_id, self.ifindex
 
+cdef class Connection(Session):
+  cdef DTLS d
+  def __init__(self, DTLS dtls, Session s):
+    super().__init__(addr = s.addr, port = s.port, flowinfo=s.flowinfo, scope_id=s.scope_id)
+    self.d = dtls
+  def __del__(self):
+    self.d.close(self)
+    self.d.resetPeer(self)
+
+cdef class MCConnection(Session):
+  cdef DTLS d
+  def __init__(self, DTLS dtls, Session s):
+    super().__init__(addr = s.addr, port = s.port, flowinfo=s.flowinfo, scope_id=s.scope_id)
+    self.d = dtls
+  def __del__(self):
+    self.d.joinLeaveGroupe(self.addr, self.d._sock, join=False)
+    self.d.resetPeer(self)
+
 cdef class DTLS:
   cdef dtls_context_t *ctx
   cdef dtls_handler_t cb
-  cdef object pycb
+  cdef public object pycb
   cdef char* pskId
-  cdef object pskStore
+  cdef public object pskStore
   
-  @property
-  def pycb(self):
-    return self.pycb
+  #@property
+  #def pycb(self):
+    #return self.pycb
   
   @property
   def pskId(self):
     return self.pskId
   
-  @property
-  def pskStore(self):
-    return self.pskStore
+  #@property
+  #def pskStore(self):
+    #return self.pskStore
   
   def __cinit__(self):
     tdtls.dtls_init()
@@ -202,8 +220,9 @@ cdef class DTLS:
     ret = tdtls.dtls_connect(self.ctx, session.getSession());
     if(ret == 0):
       print "already connected to", addr
+      return Connection(self, session)
     elif ret > 0:
-      return session
+      return Connection(self, session)
     else:
       print "error", ret
       return None
@@ -248,26 +267,21 @@ cdef class DTLS:
     
     addrinfo = socket.getaddrinfo(group, None, type=socket.SOCK_DGRAM)[0]
     ga = b""
-    try:
-      ga = socket.inet_pton(addrinfo[0], addrinfo[4][0])
-      assert addrinfo[0] == socket.AF_INET6
-      mreq = ga + struct.pack('@I', 0)
-      if join:
-        sock.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_JOIN_GROUP, mreq)
-      else:
-        sock.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_LEAVE_GROUP, mreq)
-    except OSError as e:
-      print e
-      return False
-    return True
+    ga = socket.inet_pton(addrinfo[0], addrinfo[4][0])
+    assert addrinfo[0] == socket.AF_INET6
+    mreq = ga + struct.pack('@I', 0)
+    if join:
+      sock.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_JOIN_GROUP, mreq)
+    else:
+      sock.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_LEAVE_GROUP, mreq)
   
   #int fake_key_block(session_t *dst, dtls_context_t *ctx, dtls_peer_type role, unsigned char *psk, uint8_t groupid)
-  def fakeKeyBlock(self, group, tdtls.dtls_peer_type role, unsigned char* psk, uint8_t gid):
-    session = Session(addr=group, port=0, flowinfo=0, scope_id=0)
+  def fakeKeyBlock(self, group, port, tdtls.dtls_peer_type role, unsigned char* psk, uint8_t gid, flowinfo=0, scope_id=0):
+    session = Session(addr=group, port=port, flowinfo=flowinfo, scope_id=scope_id)
     if(tdtls.fake_key_block(session.getSession(), self.ctx, role, psk[:], gid) < 0):
       raise Exception()
     #(<Session?>session).p()
-    return session
+    return MCConnection(self, session)
 
 def setLogLevel(level):
   tdtls.dtls_set_log_level(level)

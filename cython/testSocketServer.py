@@ -42,19 +42,5 @@ print("Log Level:", dtls.dtlsGetLogLevel())
 
 d = dtls.DTLS(read=read, write=write, event=event, pskId=b"Client_identity", pskStore={b"Client_identity": b"secretPSK"})
 
-pprint("connect:")
-s = d.connect("::1", 20220)
-
-#block till connected
-while lastEvent != 0x1de:
+while True:
   querySock(sock, d)
-
-pprint("try to send data")
-print("try write:", d.write(s, b"Test!\n"))
-
-pprint("answer:")
-querySock(sock, d)
-
-pprint("close connection")
-d.close(s)
-d.resetPeer(s)
