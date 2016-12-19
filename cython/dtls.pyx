@@ -93,7 +93,7 @@ cdef int _get_psk_info(dtls_context_t *ctx,
     l = len(self.pskId)
     if result_length >= l:
       #result = self.pskId
-      string.memcpy(result_data, self.pskId, l)
+      string.memcpy(result_data, <char*>(self.pskId), l)
       #print result_data[:l], result_data[:l].hex(), l
       return l
     else:
@@ -119,7 +119,10 @@ cdef class Session:
       assert sizeof(self.session.addr.sin6) == 28
       self.session.size = sizeof(self.session.addr.sin6)
       self.session.addr.sin6.sin6_family   = socket.AF_INET6
-      self.session.addr.sin6.sin6_addr.s6_addr = socket.inet_pton(self.session.addr.sin6.sin6_family, addr)
+      
+      tmpaddr = socket.inet_pton(self.session.addr.sin6.sin6_family, addr)
+      string.memcpy(self.session.addr.sin6.sin6_addr.s6_addr, <char*>tmpaddr, 16)
+      
       self.session.addr.sin6.sin6_port     = socket.htons(port)
       self.session.addr.sin6.sin6_flowinfo = flowinfo
       self.session.addr.sin6.sin6_scope_id = scope_id
