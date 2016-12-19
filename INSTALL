@@ -1,0 +1,6 @@
+sudo apt-get install autoconf cython3
+autoreconf
+./configure --without-ecc
+make
+cd cython/
+python3 setup.py build_ext --inplace
