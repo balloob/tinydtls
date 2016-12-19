@@ -172,16 +172,16 @@ cdef class DTLS:
   cdef dtls_context_t *ctx
   cdef dtls_handler_t cb
   cdef public object pycb
-  cdef char* pskId
+  cdef public char* pskId
   cdef public object pskStore
   
   #@property
   #def pycb(self):
     #return self.pycb
   
-  @property
-  def pskId(self):
-    return self.pskId
+  #@property
+  #def pskId(self):
+    #return self.pskId
   
   #@property
   #def pskStore(self):
