@@ -268,7 +268,7 @@ cdef class DTLS:
     """join/leave multicast group"""
     import struct
     
-    addrinfo = socket.getaddrinfo(group, None, type=socket.SOCK_DGRAM)[0]
+    addrinfo = socket.getaddrinfo(group, None, family=socket.AF_INET6, type=socket.SOCK_DGRAM)[0]
     ga = b""
     ga = socket.inet_pton(addrinfo[0], addrinfo[4][0])
     assert addrinfo[0] == socket.AF_INET6

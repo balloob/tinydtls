@@ -112,10 +112,13 @@ class DTLSSocket():
     print(attr)
     return getattr(self._sock, attr)
   
-  def joinMC(self, group, port, role, psk, gid=0, flowinfo=0, scope_id=0):
-    if role == dtls.DTLS_SERVER:
-      self.d.joinLeaveGroupe(group, self._sock, join=True)
-      s = self.d.fakeKeyBlock(group, port, role, psk, gid)
+  def joinMC(self, group, port, role, psk, gid=0, flowinfo=0, scope_id=0, join=True):
+    if join:
+      if role == dtls.DTLS_SERVER:
+        self.d.joinLeaveGroupe(group, self._sock, join=True)
+        s = self.d.fakeKeyBlock(group, port, role, psk, gid)
+      else:
+        s = self.d.fakeKeyBlock(group, port, role, psk, gid)
+      self.connected[(group, port, flowinfo, scope_id)] = s
     else:
-      s = self.d.fakeKeyBlock(group, port, role, psk, gid)
-    self.connected[(group, port, flowinfo, scope_id)] = s
+      self.connected.pop((group, port, flowinfo, scope_id))
