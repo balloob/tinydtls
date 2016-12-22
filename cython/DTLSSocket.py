@@ -80,7 +80,10 @@ class DTLSSocket():
       self.settimeout(timeout)
       
       if self.lastEvent == 0x1de:
-        self.connected[address] = s
+        if address not in self.connected:
+          self.connected[address] = s
+        else:
+          print("sendmsg, client already connected", s, self.connected[address])
         self.lastEvent = 0
       else:
         raise BlockingIOError
@@ -94,6 +97,7 @@ class DTLSSocket():
     data = None
     ancdata = None
     src = None
+    #timeout = self.gettimeout()
     while not self.app_data and cnt > 0:
       if self.inbuffer:
         print("Data from buffer")
@@ -114,19 +118,24 @@ class DTLSSocket():
       if mc:
         ret = self.d.handleMessageAddr(dst[0], dst[1], data, mc)
         if ret != 0:
-          raise Exception("handleMessageAddr returned", ret)
+          print("handleMessageAddr returned", ret)
+          raise BlockingIOError
       else:
         addr, port = src[:2]
         addr = addr.split("%")[0]
         print("recvmsg call handleMessageAddr with:", addr, port)
         ret = self.d.handleMessageAddr(addr, port, data, mc)
         if ret != 0:
-          raise Exception("handleMessageAddr returned", ret)
-        self.connected[(addr, port, 0, 0)] = dtls.Session(addr, port, 0, 0)
-      
-      if not self.app_data:
-        time.sleep(1) #TODO needs a better soultion
+          print("handleMessageAddr returned", ret)
+          raise BlockingIOError
+        if self.lastEvent == 0x1de:
+          if (addr, port, 0, 0) not in self.connected:
+            self.connected[(addr, port, 0, 0)] = dtls.Session(addr, port, 0, 0)
+          else:
+            print("recvmsg, client already connected")
       cnt -= 1
+    
+    #self.settimeout(timeout)
     if self.app_data:
       data, addr = self.app_data
       self.app_data = None
