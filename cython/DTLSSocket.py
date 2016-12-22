@@ -40,12 +40,25 @@ class DTLSSocket():
   def _event(self, level, code):
     self.lastEvent = code
   
+  def _isMC(self, addr):
+    if isinstance(addr, str):
+      addr = socket.inet_pton(socket.AF_INET6, addr)
+    return addr[0] == 0xFF
+  
   def sendmsg(self, data, ancdata=[], flags=0, address=None, cnt=10):
     data = b''.join(data)
     
-    if address not in self.connected:
+    if address and address not in self.connected:
+      addr = address[0]
+      port = address[1]
+      flowinfo = 0 if len(address) < 3 else address[3]
+      scope_id = 0 if len(address) < 4 else address[4]
+      
+      if self._isMC(addr):
+        return 0 #Not Client in MC-Group, aiocoap wantes to answer MC-PUT?
+      
       print("connecting...", address)
-      addr, port, flowinfo, scope_id = address
+      #addr, port, flowinfo, scope_id = address
       self.lastEvent = None
       s = self.d.connect(addr, port, flowinfo, scope_id)
       if not s:
