@@ -1,4 +1,4 @@
-import socket, dtls
+import socket, dtls, time
 
 DTLS_CLIENT = dtls.DTLS_CLIENT
 DTLS_SERVER = dtls.DTLS_SERVER
@@ -38,6 +38,7 @@ class DTLSSocket():
       return self._sock.sendto(y, x)
   
   def _event(self, level, code):
+    print("-- Event:", hex(code), "--")
     self.lastEvent = code
   
   def _isMC(self, addr):
@@ -46,34 +47,41 @@ class DTLSSocket():
     return addr[0] == 0xFF
   
   def sendmsg(self, data, ancdata=[], flags=0, address=None, cnt=10):
+    print("sendmsg:", address, data, ancdata)
     data = b''.join(data)
     
+    if len(address) == 2:
+      address = (address[0], address[1], 0, 0)
+    
     if address and address not in self.connected:
-      addr = address[0]
-      port = address[1]
-      flowinfo = 0 if len(address) < 3 else address[3]
-      scope_id = 0 if len(address) < 4 else address[4]
+      addr, port, flowinfo, scope_id = address
       
       if self._isMC(addr):
         return 0 #Not Client in MC-Group, aiocoap wantes to answer MC-PUT?
       
       print("connecting...", address)
-      #addr, port, flowinfo, scope_id = address
+      timeout = self.gettimeout()
+      self.settimeout(1.0)
+      
       self.lastEvent = None
       s = self.d.connect(addr, port, flowinfo, scope_id)
       if not s:
-        raise Exception
+        raise Exception("can't connect")
       while self.lastEvent != 0x1de and cnt>0:
         try:
           indata = self.recvmsg(1200, cnt=1)
-        except (BlockingIOError, InterruptedError):
+        except (BlockingIOError, InterruptedError, socket.timeout):
           pass
         else:
           self.inbuffer = indata
+          cnt = 0
         cnt -= 1
+      
+      self.settimeout(timeout)
       
       if self.lastEvent == 0x1de:
         self.connected[address] = s
+        self.lastEvent = 0
       else:
         raise BlockingIOError
     
@@ -88,8 +96,11 @@ class DTLSSocket():
     src = None
     while not self.app_data and cnt > 0:
       if self.inbuffer:
+        print("Data from buffer")
         data, ancdata, flags, src = self.inbuffer
+        self.inbuffer = None
       else:
+        print("Buffer empty, call _sock.recvmsg")
         data, ancdata, flags, src = self._sock.recvmsg(buffsize, ancbufsize, flags)
       
       dst = 0
@@ -105,9 +116,16 @@ class DTLSSocket():
         if ret != 0:
           raise Exception("handleMessageAddr returned", ret)
       else:
-        if self.d.handleMessageAddr(src[0], src[1], data, mc) != 0:
+        addr, port = src[:2]
+        addr = addr.split("%")[0]
+        print("recvmsg call handleMessageAddr with:", addr, port)
+        ret = self.d.handleMessageAddr(addr, port, data, mc)
+        if ret != 0:
           raise Exception("handleMessageAddr returned", ret)
+        self.connected[(addr, port, 0, 0)] = dtls.Session(addr, port, 0, 0)
       
+      if not self.app_data:
+        time.sleep(1) #TODO needs a better soultion
       cnt -= 1
     if self.app_data:
       data, addr = self.app_data
