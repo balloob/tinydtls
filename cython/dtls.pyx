@@ -89,7 +89,7 @@ cdef int _get_psk_info(dtls_context_t *ctx,
     #print "PSK HINT", ip, port, desc
     pass
   elif req_type == tdtls.DTLS_PSK_IDENTITY:
-    print "PSK ID", ip, port, desc.hex()
+    #print "PSK ID", ip, port, desc.hex()
     l = len(self.pskId)
     if result_length >= l:
       #result = self.pskId
@@ -99,7 +99,7 @@ cdef int _get_psk_info(dtls_context_t *ctx,
     else:
       return -1
   elif req_type == tdtls.DTLS_PSK_KEY:
-    print "PSK KEY", ip, port, desc, desc.hex()
+    #print "PSK KEY", ip, port, desc, desc.hex()
     if desc in self.pskStore.keys():
       l = len(self.pskStore[desc])
       #result = self.pskStore[desc]
@@ -269,7 +269,7 @@ cdef class DTLS:
     import struct
     
     addrinfo = socket.getaddrinfo(group, None, family=socket.AF_INET6, type=socket.SOCK_DGRAM)[0]
-    print("addrinfo", addrinfo)
+    #print("addrinfo", addrinfo)
     ga = b""
     ga = socket.inet_pton(addrinfo[0], addrinfo[4][0])
     assert addrinfo[0] == socket.AF_INET6

@@ -18,10 +18,10 @@ class DTLSSocket():
     print("Init done:", self._sock, self.d)
   
   def __del__(self):
-    print("Destroying", self)
     self.connected.clear()
-    self.d = None
-    self._sock = None
+    del self.d
+    self._sock.close()
+    del self._sock
   
   def _read(self, x, y):
     if self.app_data:
@@ -38,7 +38,7 @@ class DTLSSocket():
       return self._sock.sendto(y, x)
   
   def _event(self, level, code):
-    print("-- Event:", hex(code), "--")
+    #print("-- Event:", hex(code), "--")
     self.lastEvent = code
   
   def _isMC(self, addr):
@@ -47,7 +47,7 @@ class DTLSSocket():
     return addr[0] == 0xFF
   
   def sendmsg(self, data, ancdata=[], flags=0, address=None, cnt=10):
-    print("sendmsg:", address, data, ancdata)
+    #print("sendmsg:", address, data, ancdata)
     data = b''.join(data)
     
     if len(address) == 2:
@@ -82,8 +82,8 @@ class DTLSSocket():
       if self.lastEvent == 0x1de:
         if address not in self.connected:
           self.connected[address] = s
-        else:
-          print("sendmsg, client already connected", s, self.connected[address])
+        #else:
+          #print("sendmsg, client already connected", s, self.connected[address])
         self.lastEvent = 0
       else:
         raise BlockingIOError
@@ -100,11 +100,11 @@ class DTLSSocket():
     #timeout = self.gettimeout()
     while not self.app_data and cnt > 0:
       if self.inbuffer:
-        print("Data from buffer")
+        #print("Data from buffer")
         data, ancdata, flags, src = self.inbuffer
         self.inbuffer = None
       else:
-        print("Buffer empty, call _sock.recvmsg")
+        #print("Buffer empty, call _sock.recvmsg")
         data, ancdata, flags, src = self._sock.recvmsg(buffsize, ancbufsize, flags)
       
       dst = 0
@@ -123,7 +123,7 @@ class DTLSSocket():
       else:
         addr, port = src[:2]
         addr = addr.split("%")[0]
-        print("recvmsg call handleMessageAddr with:", addr, port)
+        #print("recvmsg call handleMessageAddr with:", addr, port)
         ret = self.d.handleMessageAddr(addr, port, data, mc)
         if ret != 0:
           print("handleMessageAddr returned", ret)
@@ -131,8 +131,8 @@ class DTLSSocket():
         if self.lastEvent == 0x1de:
           if (addr, port, 0, 0) not in self.connected:
             self.connected[(addr, port, 0, 0)] = dtls.Session(addr, port, 0, 0)
-          else:
-            print("recvmsg, client already connected")
+          #else:
+            #print("recvmsg, client already connected")
       cnt -= 1
     
     #self.settimeout(timeout)
@@ -144,7 +144,7 @@ class DTLSSocket():
       raise BlockingIOError
   
   def __getattr__(self, attr):
-    print(attr)
+    #print(attr)
     return getattr(self._sock, attr)
   
   def joinMC(self, group, port, role, psk, gid=0, flowinfo=0, scope_id=0, join=True):
@@ -157,3 +157,6 @@ class DTLSSocket():
       self.connected[(group, port, flowinfo, scope_id)] = s
     else:
       self.connected.pop((group, port, flowinfo, scope_id))
+  
+  def close(self):
+    pass
