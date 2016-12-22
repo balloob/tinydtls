@@ -9,4 +9,4 @@ gid = "0"
 print(group, port, psk, gid)
 s.joinMC(group=group, port=int(port), role=dtls.DTLS_SERVER, psk=psk.encode("utf-8"), gid=int(gid))
 while True:
-  print(s.recvmsg(1200, cnt=50))
+  print("Mainloop Got:", s.recvmsg(1200, cnt=50))

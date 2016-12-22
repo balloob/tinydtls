@@ -269,14 +269,15 @@ cdef class DTLS:
     import struct
     
     addrinfo = socket.getaddrinfo(group, None, family=socket.AF_INET6, type=socket.SOCK_DGRAM)[0]
+    print("addrinfo", addrinfo)
     ga = b""
     ga = socket.inet_pton(addrinfo[0], addrinfo[4][0])
     assert addrinfo[0] == socket.AF_INET6
     mreq = ga + struct.pack('@I', 0)
     if join:
-      sock.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_JOIN_GROUP, mreq)
+      return sock.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_JOIN_GROUP, mreq)
     else:
-      sock.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_LEAVE_GROUP, mreq)
+      return sock.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_LEAVE_GROUP, mreq)
   
   #int fake_key_block(session_t *dst, dtls_context_t *ctx, dtls_peer_type role, unsigned char *psk, uint8_t groupid)
   def fakeKeyBlock(self, group, port, tdtls.dtls_peer_type role, unsigned char* psk, uint8_t gid, flowinfo=0, scope_id=0):

@@ -24,20 +24,17 @@ class DTLSSocket():
     self._sock = None
   
   def _read(self, x, y):
-    #print("> read:", x, y)
     if self.app_data:
       print("_read: lost", x, y)
-    self.app_data = (x, y)
+    self.app_data = (y, x)
     return len(y)
 
   def _write(self, x, y):
     if self.outancbuff:
-      #print("sendmsg:", y, self.outancbuff, x)
       ret = self._sock.sendmsg([y,], self.outancbuff[0], self.outancbuff[1], x)
       self.outancbuff = None
       return ret
     else:
-      #print("sendto:", y, x)
       return self._sock.sendto(y, x)
   
   def _event(self, level, code):
@@ -46,10 +43,8 @@ class DTLSSocket():
   def sendmsg(self, data, ancdata=[], flags=0, address=None, cnt=10):
     data = b''.join(data)
     
-    #print("Debug sendmsg:", self.connected, address)
-    
     if address not in self.connected:
-      print("connecting...")
+      print("connecting...", address)
       addr, port, flowinfo, scope_id = address
       self.lastEvent = None
       s = self.d.connect(addr, port, flowinfo, scope_id)
@@ -98,7 +93,7 @@ class DTLSSocket():
           raise Exception("handleMessageAddr returned", ret)
       else:
         if self.d.handleMessageAddr(src[0], src[1], data, mc) != 0:
-          raise Exception
+          raise Exception("handleMessageAddr returned", ret)
       
       cnt -= 1
     if self.app_data:
@@ -115,7 +110,7 @@ class DTLSSocket():
   def joinMC(self, group, port, role, psk, gid=0, flowinfo=0, scope_id=0, join=True):
     if join:
       if role == dtls.DTLS_SERVER:
-        self.d.joinLeaveGroupe(group, self._sock, join=True)
+        self.d.joinLeaveGroupe(group, self, join=True)
         s = self.d.fakeKeyBlock(group, port, role, psk, gid)
       else:
         s = self.d.fakeKeyBlock(group, port, role, psk, gid)
