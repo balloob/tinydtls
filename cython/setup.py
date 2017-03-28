@@ -3,6 +3,8 @@ from distutils.extension import Extension
 from Cython.Build import cythonize
 
 setup(
+    name="tinyDTLS",
+    py_modules = [ "DTLSSocket", ],
     ext_modules = cythonize([
       Extension("dtls", ["dtls.pyx", "../dtls.c", "../crypto.c", "../ccm.c",
                          "../hmac.c", "../netq.c", "../peer.c", "../dtls_time.c",
