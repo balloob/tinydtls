@@ -19,8 +19,8 @@ class DTLSSocket():
   
   def __del__(self):
     self.connected.clear()
-    del self.d
     self._sock.close()
+    del self.d
     del self._sock
   
   def _read(self, x, y):
@@ -30,12 +30,16 @@ class DTLSSocket():
     return len(y)
 
   def _write(self, x, y):
-    if self.outancbuff:
-      ret = self._sock.sendmsg([y,], self.outancbuff[0], self.outancbuff[1], x)
-      self.outancbuff = None
-      return ret
-    else:
-      return self._sock.sendto(y, x)
+    try:
+      if self.outancbuff:
+        ret = self._sock.sendmsg([y,], self.outancbuff[0], self.outancbuff[1], x)
+        self.outancbuff = None
+        return ret
+      else:
+        return self._sock.sendto(y, x)
+    except OSError:
+      print("_sock already dead...\ncan't send", x, y)
+      return -1
   
   def _event(self, level, code):
     #print("-- Event:", hex(code), "--")
@@ -57,6 +61,7 @@ class DTLSSocket():
       addr, port, flowinfo, scope_id = address
       
       if self._isMC(addr):
+        print("unknown MC", address, "not in", self.connected)
         return 0 #Not Client in MC-Group, aiocoap wantes to answer MC-PUT?
       
       print("connecting...", address)
