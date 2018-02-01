@@ -19,6 +19,11 @@
 
 #include "mc-helper.h"
 
+#ifdef __APPLE__
+#define IPV6_ADD_MEMBERSHIP IPV6_JOIN_GROUP
+#define IPV6_DROP_MEMBERSHIP    IPV6_LEAVE_GROUP
+#endif
+
 #ifndef __USE_XOPEN2K
 #warning "no XOPEN2K"
 #endif
